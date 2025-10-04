@@ -26,6 +26,33 @@ const pool = new Pool({
   },
 });
 
+const initializeDatabase = async () => {
+  const createTableQuery = `
+    CREATE TABLE IF NOT EXISTS users (
+        id SERIAL PRIMARY KEY,
+        name VARCHAR(255) NOT NULL,
+        email VARCHAR(255) NOT NULL,
+        password_hash VARCHAR(255) NOT NULL,
+        registration_time TIMESTAMPTZ DEFAULT NOW(),
+        last_login_time TIMESTAMPTZ,
+        status VARCHAR(50) DEFAULT 'unverified',
+        verification_token VARCHAR(255)
+    );
+  `;
+  const createIndexQuery = `
+    CREATE UNIQUE INDEX IF NOT EXISTS uniq_users_email_lower ON users (LOWER(email));
+  `;
+  try {
+    await pool.query(createTableQuery);
+    await pool.query(createIndexQuery);
+    console.log(
+      "Database initialized successfully (table and index checked/created)."
+    );
+  } catch (err) {
+    console.error("Error initializing database:", err);
+  }
+};
+
 const transporter = nodemailer.createTransport({
   host: "sandbox.smtp.mailtrap.io",
   port: 2525,
@@ -241,6 +268,8 @@ app.post(
     }
   }
 );
+
+initializeDatabase();
 
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
