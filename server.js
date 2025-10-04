@@ -8,17 +8,22 @@ import crypto from "crypto";
 
 const { Pool } = pkg;
 const app = express();
-const SECRET_KEY = "your_super_secret_key";
 
-app.use(cors());
+const FRONTEND_URL =
+  process.env.FRONTEND_URL ||
+  "https://user-management-app-itransition.onrender.com";
+const SECRET_KEY =
+  process.env.SECRET_KEY || "mySuperStrongSecretKeyForJWT12345";
+
+app.use(cors({ origin: FRONTEND_URL }));
 app.use(express.json());
 
 const pool = new Pool({
-  user: "postgres",
-  host: "localhost",
-  database: "user_management_db",
-  password: "123",
-  port: 5432,
+  connectionString:
+    "postgresql://user_management_db_o6o4_user:TzrePklJcDBPVSsSX92GVaLu3yXoFodH@dpg-d3g0ko7fte5s73ciqivg-a/user_management_db_o6o4",
+  ssl: {
+    rejectUnauthorized: false,
+  },
 });
 
 const transporter = nodemailer.createTransport({
@@ -34,6 +39,7 @@ const authenticateToken = async (req, res, next) => {
   const authHeader = req.headers["authorization"];
   const token = authHeader && authHeader.split(" ")[1];
   if (token == null) return res.sendStatus(401);
+
   try {
     const decoded = jwt.verify(token, SECRET_KEY);
     const userResult = await pool.query("SELECT * FROM users WHERE id = $1", [
@@ -59,17 +65,8 @@ app.post("/api/register", async (req, res) => {
   if (!name || !email || !password) {
     return res.status(400).json({ message: "All fields are required" });
   }
-  try {
-    const existingUser = await pool.query(
-      "SELECT * FROM users WHERE LOWER(email) = LOWER($1)",
-      [email]
-    );
-    if (existingUser.rows.length > 0) {
-      return res
-        .status(400)
-        .json({ message: "User with this email already exists" });
-    }
 
+  try {
     const passwordHash = await bcrypt.hash(password, 10);
     const verificationToken = crypto.randomBytes(32).toString("hex");
 
@@ -84,7 +81,7 @@ app.post("/api/register", async (req, res) => {
       verificationToken,
     ]);
 
-    const verificationLink = `http://localhost:5173/verify-email/${verificationToken}`;
+    const verificationLink = `${FRONTEND_URL}/verify-email/${verificationToken}`;
 
     await transporter.sendMail({
       from: '"Your App Name" <your_email@example.com>',
@@ -99,6 +96,11 @@ app.post("/api/register", async (req, res) => {
     });
   } catch (error) {
     console.error("Error during registration:", error);
+    if (error.code === "23505") {
+      return res
+        .status(400)
+        .json({ message: "User with this email already exists" });
+    }
     res.status(500).json({ message: "Internal server error" });
   }
 });
@@ -133,14 +135,22 @@ app.post("/api/login", async (req, res) => {
   if (!email || !password) {
     return res.status(400).json({ message: "Email and password are required" });
   }
+
   try {
     const result = await pool.query(
       "SELECT * FROM users WHERE LOWER(email) = LOWER($1)",
       [email]
     );
     const user = result.rows[0];
+
     if (!user) {
       return res.status(401).json({ message: "Invalid credentials" });
+    }
+
+    if (user.status === "unverified") {
+      return res
+        .status(403)
+        .json({ message: "Please verify your email before logging in." });
     }
 
     if (user.status === "blocked") {
@@ -188,6 +198,7 @@ app.post("/api/users/update-status", authenticateToken, async (req, res) => {
       .status(400)
       .json({ message: "User IDs and status are required" });
   }
+
   try {
     const query = "UPDATE users SET status = $1 WHERE id = ANY($2::int[])";
     await pool.query(query, [status, userIds]);
@@ -203,6 +214,7 @@ app.post("/api/users/delete", authenticateToken, async (req, res) => {
   if (!userIds || !userIds.length) {
     return res.status(400).json({ message: "User IDs are required" });
   }
+
   try {
     const query = "DELETE FROM users WHERE id = ANY($1::int[])";
     await pool.query(query, [userIds]);
@@ -230,6 +242,7 @@ app.post(
   }
 );
 
-app.listen(3001, () => {
-  console.log("Server is running on http://localhost:3001");
+const PORT = process.env.PORT || 3001;
+app.listen(PORT, () => {
+  console.log(`Server is running on port ${PORT}`);
 });
