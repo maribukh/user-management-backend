@@ -5,13 +5,16 @@ import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import nodemailer from "nodemailer";
 import crypto from "crypto";
+import dotenv from "dotenv";
+
+dotenv.config();
 
 const { Pool } = pkg;
 const app = express();
 
 const FRONTEND_URL =
   process.env.FRONTEND_URL ||
-  "https://user-management-app-itransition.onrender.com";
+  "https://user-management-app-itransition.vercel.app";
 const SECRET_KEY =
   process.env.SECRET_KEY || "mySuperStrongSecretKeyForJWT12345";
 
@@ -19,8 +22,7 @@ app.use(cors({ origin: FRONTEND_URL }));
 app.use(express.json());
 
 const pool = new Pool({
-  connectionString:
-    "postgresql://user_management_db_o6o4_user:TzrePklJcDBPVSsSX92GVaLu3yXoFodH@dpg-d3g0ko7fte5s73ciqivg-a/user_management_db_o6o4",
+  connectionString: process.env.DATABASE_URL,
   ssl: {
     rejectUnauthorized: false,
   },
@@ -45,20 +47,16 @@ const initializeDatabase = async () => {
   try {
     await pool.query(createTableQuery);
     await pool.query(createIndexQuery);
-    console.log(
-      "Database initialized successfully (table and index checked/created)."
-    );
   } catch (err) {
-    console.error("Error initializing database:", err);
+    console.error(err);
   }
 };
 
 const transporter = nodemailer.createTransport({
-  host: "sandbox.smtp.mailtrap.io",
-  port: 2525,
+  service: "gmail",
   auth: {
-    user: "32716a422f78e3",
-    pass: "5ed966fc266fa9",
+    user: process.env.EMAIL_USER,
+    pass: process.env.EMAIL_PASS,
   },
 });
 
@@ -111,7 +109,7 @@ app.post("/api/register", async (req, res) => {
     const verificationLink = `${FRONTEND_URL}/verify-email/${verificationToken}`;
 
     await transporter.sendMail({
-      from: '"Your App Name" <your_email@example.com>',
+      from: `"User Management App" <${process.env.EMAIL_USER}>`,
       to: email,
       subject: "Please verify your email address",
       html: `<b>Please click the following link to verify your email:</b> <a href="${verificationLink}">${verificationLink}</a>`,
@@ -122,7 +120,7 @@ app.post("/api/register", async (req, res) => {
         "Registration successful. Please check your email to verify your account.",
     });
   } catch (error) {
-    console.error("Error during registration:", error);
+    console.error(error);
     if (error.code === "23505") {
       return res
         .status(400)
@@ -152,7 +150,7 @@ app.get("/api/verify-email/:token", async (req, res) => {
 
     res.status(200).json({ message: "Email verified successfully." });
   } catch (error) {
-    console.error("Error during email verification:", error);
+    console.error(error);
     res.status(500).json({ message: "Internal server error." });
   }
 });
@@ -201,7 +199,7 @@ app.post("/api/login", async (req, res) => {
 
     res.status(200).json({ message: "Login successful", token });
   } catch (error) {
-    console.error("Error during login:", error);
+    console.error(error);
     res.status(500).json({ message: "Internal server error" });
   }
 });
@@ -213,7 +211,7 @@ app.get("/api/users", authenticateToken, async (req, res) => {
     );
     res.status(200).json(result.rows);
   } catch (error) {
-    console.error("Error fetching users:", error);
+    console.error(error);
     res.status(500).json({ message: "Internal server error" });
   }
 });
@@ -231,7 +229,7 @@ app.post("/api/users/update-status", authenticateToken, async (req, res) => {
     await pool.query(query, [status, userIds]);
     res.status(200).json({ message: "Users status updated successfully" });
   } catch (error) {
-    console.error("Error updating user status:", error);
+    console.error(error);
     res.status(500).json({ message: "Internal server error" });
   }
 });
@@ -247,7 +245,7 @@ app.post("/api/users/delete", authenticateToken, async (req, res) => {
     await pool.query(query, [userIds]);
     res.status(200).json({ message: "Users deleted successfully" });
   } catch (error) {
-    console.error("Error deleting users:", error);
+    console.error(error);
     res.status(500).json({ message: "Internal server error" });
   }
 });
@@ -263,7 +261,7 @@ app.post(
         message: `${result.rowCount} unverified users deleted successfully`,
       });
     } catch (error) {
-      console.error("Error deleting unverified users:", error);
+      console.error(error);
       res.status(500).json({ message: "Internal server error" });
     }
   }
